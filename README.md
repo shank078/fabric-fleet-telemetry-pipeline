@@ -5,6 +5,7 @@
 ![Microsoft Fabric](https://img.shields.io/badge/Microsoft_Fabric-0078D4?style=flat&logo=microsoft&logoColor=white)
 ![KQL](https://img.shields.io/badge/KQL-00B4D8?style=flat&logo=microsoftazure&logoColor=white)
 ![Azure](https://img.shields.io/badge/Azure_Entra_ID-0078D4?style=flat&logo=microsoftazure&logoColor=white)
+![Data Activator](https://img.shields.io/badge/Data_Activator-0078D4?style=flat&logo=microsoft&logoColor=white)
 ![Status](https://img.shields.io/badge/Case_1-Solved_✓-2ea44f?style=flat)
 
 ---
@@ -190,6 +191,15 @@ BusTelemetry
 
 ---
 
+## 🔗 Related Projects
+
+| Project | Description |
+|---|---|
+| [Azure Sentinel Honeypot & SIEM](https://github.com/shank078/azure-sentinel-honeypot-siem) | 1,400+ real brute-force attacks captured live |
+| [Azure Identity Security Lab](https://github.com/shank078/azure-identity-security-lab) | Full red/blue team MFA compromise & incident response |
+
+---
+
 ## 📁 Repository Structure
 
 ```
@@ -217,6 +227,14 @@ fabric-fleet-telemetry-pipeline/
 ```
 
 ---
+
+## 👤 Author
+
+**Shankar Baral** — Junior Cyber Security Analyst | Canberra, ACT
+
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-shankarbaral1-0A66C2?style=flat&logo=linkedin&logoColor=white)](https://linkedin.com/in/shankarbaral1)
+[![GitHub](https://img.shields.io/badge/GitHub-shank078-181717?style=flat&logo=github&logoColor=white)](https://github.com/shank078)
+[![Email](https://img.shields.io/badge/Email-shankarbaral1@gmail.com-EA4335?style=flat&logo=gmail&logoColor=white)](mailto:shankarbaral1@gmail.com)
 
 *Part of an ongoing Kusto Detective Agency series — Case 2 coming soon.*
 
