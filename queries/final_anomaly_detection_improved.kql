@@ -1,0 +1,16 @@
+// Post-lab revision — NOT the version run in the screenshots (that one is
+// final_anomaly_detection.kql). Two changes I would make before running this
+// continuously as a scheduled rule:
+//   1. Time-scope first: 'where Timestamp > ago(2h)' limits the scan window,
+//      which matters once the table grows past a demo dataset.
+//   2. arg_max(Delay, *) instead of max(Delay): keeps the full row at the
+//      moment of maximum delay, so downstream automation gets the event
+//      context without a second lookup query.
+// Source: BusTelemetry (Eventhouse: DetectiveAgency, live Eventstream)
+
+BusTelemetry
+| where Timestamp > ago(2h)
+| extend Delay = Timestamp - ScheduleTime
+| summarize arg_max(Delay, *) by BusLine
+| where Delay > 30m
+| top 5 by Delay desc

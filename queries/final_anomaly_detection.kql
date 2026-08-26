@@ -1,0 +1,11 @@
+// Final detection — as run in the lab (matches screenshot 13). The >30m
+// threshold was settled after >1h returned nothing overnight: real delays sat
+// under an hour. Returned 4 bus lines over threshold; the top two (74, 11)
+// were confirmed by the case as the actual no-shows.
+// Source: BusTelemetry (Eventhouse: DetectiveAgency, live Eventstream)
+
+BusTelemetry
+| extend Delay = Timestamp - ScheduleTime
+| summarize MaxDelay = max(Delay) by BusLine
+| where MaxDelay > 30m
+| top 5 by MaxDelay desc

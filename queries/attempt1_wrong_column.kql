@@ -1,0 +1,9 @@
+// Attempt 1 — first pass at the no-show detection. Kept for the record: this
+// version FAILS by design. 'ScheduledTime' does not exist in the BusTelemetry
+// schema; the real column is 'ScheduleTime'. See README — KQL Query Evolution.
+// Source: BusTelemetry (Eventhouse: DetectiveAgency, live Eventstream)
+
+BusTelemetry
+| extend Delay = Timestamp - ScheduledTime
+| summarize MaxDelay = max(Delay) by BusLine
+| top 5 by MaxDelay desc

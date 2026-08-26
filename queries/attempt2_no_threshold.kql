@@ -1,0 +1,10 @@
+// Attempt 2 — correct column name, but NO threshold. This is the query that was
+// embedded in the first Data Activator rule (NoShow_Inv_Alert) and produced
+// 15 Teams messages in under 10 minutes — the alert-fatigue lesson.
+// Matches screenshot 08 (rule configuration) and 11 (the resulting spam).
+// Source: BusTelemetry (Eventhouse: DetectiveAgency, live Eventstream)
+
+BusTelemetry
+| extend Delay = Timestamp - ScheduleTime
+| summarize MaxDelay = max(Delay) by BusLine
+| top 5 by MaxDelay desc
