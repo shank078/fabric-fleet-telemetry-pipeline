@@ -1,5 +1,6 @@
-# 🚌 Real-Time Fleet Telemetry Pipeline — Microsoft Fabric
-### *Anomaly detection on live streaming transit data — same KQL pattern used in Microsoft Sentinel analytic rules.*
+# Real-Time Fleet Telemetry Pipeline — Microsoft Fabric
+
+### Anomaly detection on live streaming data in KQL — built for Microsoft's Kusto Detective Agency (Fabric Special) and solved on a real Fabric tenant.
 
 <p align="left">
   <img src="https://img.shields.io/badge/Microsoft_Fabric-0078D4?style=for-the-badge&logo=microsoft&logoColor=white"/>
@@ -7,12 +8,11 @@
   <img src="https://img.shields.io/badge/Data_Activator-0078D4?style=for-the-badge&logo=microsoft&logoColor=white"/>
   <img src="https://img.shields.io/badge/Eventstream-0078D4?style=for-the-badge&logo=microsoft&logoColor=white"/>
   <img src="https://img.shields.io/badge/Real--Time_Analytics-00B4D8?style=for-the-badge&logo=microsoftazure&logoColor=white"/>
-  <img src="https://img.shields.io/badge/Case-Solved_✅-2ea44f?style=for-the-badge"/>
 </p>
 
 ---
 
-## ⚡ TL;DR
+## TL;DR
 
 | Detail | Value |
 |--------|-------|
@@ -21,229 +21,196 @@
 | **Table** | BusTelemetry (live Eventstream) |
 | **Query Language** | KQL (Kusto Query Language) |
 | **Alerting** | Data Activator → Microsoft Teams |
-| **Key Challenge** | Alert fatigue — 15 spam alerts in minutes with no threshold |
-| **Resolution** | Threshold tuned from `>1h` (too strict) → `>30m` (optimal) |
-| **Result** | Bus Lines 74 & 11 identified as no-show anomalies ✅ |
+| **Key Challenge** | Alert fatigue — 15 Teams alerts in under 10 minutes with no threshold |
+| **Resolution** | Threshold iterated from none → `>1h` (no hits) → `>30m` (validated against the data) |
+| **Result** | 4 bus lines over threshold; lines 74 & 11 confirmed as the no-shows |
 
 ---
 
-## 📖 What This Project Is
+## What This Project Is
 
-The CEO of Digibus — a public transit authority — reported that several bus lines had vanished from their routes, stranding passengers across the city. Traditional monitoring had failed.
+This is Microsoft's [Kusto Detective Agency](https://detective.kusto.io/) — Fabric Special, Case 1: a hands-on challenge where you provision a real Microsoft Fabric environment, connect to a live streaming telemetry table, and find which bus lines have stopped running. The scenario is fictional; the infrastructure, the streaming data, the KQL, and the alerting are not.
 
-**Mission:** Build a real-time anomaly detection pipeline from scratch using Microsoft Fabric to identify the no-show buses.
+I used it as KQL and Fabric practice, and it turned out to teach a lesson I care about more than the puzzle: what happens when you deploy an alert rule without a threshold. My first Data Activator rule flooded Teams with 15 messages in under 10 minutes — a small, self-inflicted case study in alert fatigue, which I then fixed by iterating the threshold against the live data.
 
-This mirrors a real SOC scenario: an alert has fired, traditional tools missed it, and an analyst must build a detection rule from raw telemetry. The same KQL logic, threshold tuning process, and alert fatigue challenge apply directly to Microsoft Sentinel analytic rule development.
+The transfer to SOC work is direct: the same detect → too noisy → tune → validate loop is how a Microsoft Sentinel scheduled analytics rule gets from draft to production.
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ```mermaid
 graph LR
-    A["🚌 Live Bus Fleet\nStreaming Telemetry"] -->|Eventstream ingestion| B["Eventhouse\nDetectiveAgency DB\nBusTelemetry table"]
-    B -->|KQL anomaly detection\nwhere MaxDelay > 30m| C["KQL Queryset\nDigibus_NoShow_Investigation"]
-    C -->|Data Activator rule\nRuns every 5 minutes| D["⚠️ Alert Engine\nNoshowRealAlert"]
-    D -->|Threshold breach| E["📬 Microsoft Teams\nSOC Notification"]
+    A["Live Bus Fleet\nStreaming Telemetry"] -->|Eventstream ingestion| B["Eventhouse\nDetectiveAgency DB\nBusTelemetry table"]
+    B -->|"KQL detection\nwhere MaxDelay > 30m"| C["KQL Queryset\nDigibus_NoShow_Investigation"]
+    C -->|"Data Activator rule\nruns every 5 minutes"| D["Alert Engine\nNoshowRealAlert"]
+    D -->|Threshold breach| E["Microsoft Teams\nnotification"]
 ```
 
 ---
 
-## 🔬 KQL Query Evolution — The Full Iteration Story
+## KQL Query Evolution
 
-This is the most important part of the project. Three versions of the detection query, each teaching a different lesson.
+Three versions of the detection, each one fixing what the previous one got wrong. All three are committed in [`queries/`](queries/).
 
-### Attempt 1 — Wrong Column Name (Breaks Immediately)
+### Attempt 1 — Wrong column name (fails immediately)
 
 ```kusto
 BusTelemetry
-| extend Delay = Timestamp - ScheduledTime  // ❌ column 'ScheduledTime' does not exist
+| extend Delay = Timestamp - ScheduledTime   // column 'ScheduledTime' does not exist
 | summarize MaxDelay = max(Delay) by BusLine
 | top 5 by MaxDelay desc
 ```
 
-> **Lesson:** Always inspect the actual schema before writing detection logic. `ScheduledTime` looked right but the real field was `ScheduleTime` — a one-character difference that breaks the entire query. In Sentinel, this same issue appears when field names differ between Windows Security Event subtypes.
+The real field is `ScheduleTime` — one character off, and the query doesn't run. Checking the actual schema before writing detection logic sounds obvious; I still skipped it, once. The same trap exists in Sentinel where field names differ between Windows Security Event subtypes.
 
----
-
-### Attempt 2 — Correct Column, No Threshold (Alert Fatigue)
+### Attempt 2 — Correct column, no threshold (alert fatigue)
 
 ```kusto
 BusTelemetry
-| extend Delay = Timestamp - ScheduleTime   // ✅ correct field
+| extend Delay = Timestamp - ScheduleTime
 | summarize MaxDelay = max(Delay) by BusLine
 | top 5 by MaxDelay desc
-// ⚠️ No where clause — fires on EVERY result continuously
 ```
 
-> **Lesson:** A detection without a threshold is noise, not signal. This query fired **15 Teams alerts in under 10 minutes** — a live demonstration of alert fatigue. In a real SOC, this volume of false positives trains analysts to ignore alerts. That's how real threats get missed.
+This is the query I embedded in the first Data Activator rule. With no `where` clause, every evaluation produced results, and the rule fired on each one: **15 Teams messages in under 10 minutes** (screenshot 11). A detection without a threshold is noise, and this much noise is how real alerts get ignored.
 
----
-
-### Final Query — Production Ready ✅
+### Final — thresholded (as run, screenshot 13)
 
 ```kusto
 BusTelemetry
-| where Timestamp > ago(2h)                  // Rule #1: time-scope first — limits data blocks scanned in memory
-| extend Delay = Timestamp - ScheduleTime    // correct field name
-| summarize arg_max(Delay, *) by BusLine     // advanced aggregation: captures full row context (BusID, Lat, Long) at max delay
-| where Delay > 30m                          // threshold: filters standard operational noise
-| project TimeGenerated=Timestamp, BusLine, VehicleID=BusId, MaxDelay=Delay
-| top 5 by MaxDelay desc                     // surface highest-delay lines first
+| extend Delay = Timestamp - ScheduleTime
+| summarize MaxDelay = max(Delay) by BusLine
+| where MaxDelay > 30m
+| top 5 by MaxDelay desc
 ```
 
-> **Threshold rationale:** `>1h` was first applied but returned zero overnight alerts — real delays were consistently under 1 hour. `>30m` was validated against live data distribution and correctly surfaced Bus Lines 74 and 11 with delays of 58 and 39 minutes respectively. This iterative tuning process is identical to tuning a Sentinel scheduled analytics rule.
+**Threshold rationale:** I tried `>1h` first (screenshot 09) — it returned nothing overnight, because the real delays sat under an hour. Dropping to `>30m` and re-checking against the live distribution surfaced four bus lines: 74 (58 min), 11 (39 min), 82 (37 min) and 33 (36 min). The top two — **74 and 11** — were confirmed by the case as the actual no-shows. That candidates-then-confirm flow is the same shape as tuning a Sentinel scheduled rule and validating hits before acting on them.
 
-> **Performance note:** Time-scoping at line 1 is the cardinal rule of KQL performance in high-volume clusters. Without it, the query scans the entire dataset before summarising — causing timeouts in production. Moving from `max()` to `arg_max(Delay, *)` means an analyst or automation playbook gets the exact vehicle ID (`BusId`) for remediation without running a secondary lookup query.
+There is also a [`final_anomaly_detection_improved.kql`](queries/final_anomaly_detection_improved.kql) in the queries folder — a post-lab revision, not the version in the screenshots. It adds a `where Timestamp > ago(2h)` time-scope (limits the scan window once the table outgrows a demo dataset) and swaps `max()` for `arg_max(Delay, *)` so the full row context survives aggregation. I kept it separate rather than pretending it's what ran.
 
 ---
 
-## 🚨 Alert Fatigue — Documented in Real Time
-
-This project captured live proof of one of the most common and dangerous SOC problems.
+## Alert Fatigue — Documented as It Happened
 
 | Rule | Threshold | Result |
 |------|-----------|--------|
-| `NoShow_Inv_Alert` | None | 15 Teams messages in < 10 minutes — unusable |
-| `NoshowRealAlert` (v1) | `> 1h` | Zero alerts overnight — too strict, missed events |
-| `NoshowRealAlert` (v2) | `> 30m` | Bus Lines 74 & 11 correctly identified ✅ |
+| `NoShow_Inv_Alert` | None | 15 Teams messages in under 10 minutes — unusable |
+| `NoshowRealAlert` (v1) | `> 1h` | Zero alerts overnight — too strict for this data |
+| `NoshowRealAlert` (v2) | `> 30m` | 4 lines surfaced; 74 & 11 confirmed as no-shows |
 
-> **SOC Connection:** Alert fatigue is a leading cause of missed detections in production SOC environments. Analysts who tune detection thresholds aren't reducing sensitivity — they're increasing the signal-to-noise ratio so real threats get noticed. This is a core SOC L1 skill.
+Tuning a threshold isn't reducing sensitivity — it's raising the signal-to-noise ratio so the alerts that do fire get read. Watching my own Teams channel become unusable in ten minutes made that concrete in a way reading about it never had.
 
 ---
 
-## 📸 Screenshot Evidence
+## Screenshot Evidence
 
-### 01 — Project Requirement Brief
+### 01 — Case briefing
 ![01](images/01_Project_Requirement_Brief.png)
-> Case briefing from simulated transit authority — translating a business problem into a technical investigation. Same intake process as a real SOC ticket.
+> The Kusto Detective Agency (Fabric Special) Case 1 brief — the intake that gets translated into a technical investigation.
 
-### 02 — Microsoft Fabric Environment Setup
+### 02 — Microsoft Fabric environment setup
 ![02](images/02_Microsoft_Fabric_Environment_Setup.png)
-> Provisioned Microsoft Fabric 60-day trial tenant.
+> Fabric 60-day trial tenant provisioned.
 
-### 03 — Fabric Workspace Dashboard
+### 03 — Fabric workspace dashboard
 ![03](images/03_Fabric_Workspace_Dashboard.png)
-> Live workspace confirmed — "59 days left" badge proves this is an active environment, not a recycled screenshot.
+> Workspace live on the trial tenant.
 
-### 04 — Eventhouse Provisioning
+### 04 — Eventhouse provisioning
 ![04](images/04_Eventhouse_Provisioning_In_Progress.png)
-> Eventhouse deployed — Fabric's real-time database engine ingesting live bus telemetry.
+> Eventhouse deployed — Fabric's real-time database engine, ingesting the bus telemetry stream.
 
-### 05 — KQL Queryset with Live BusTelemetry
+### 05 — KQL queryset with live BusTelemetry
 ![05](images/05_KQL_Queryset_Creation_BusTelemetry_Live.png)
-> KQL Queryset connected to DetectiveAgency Eventhouse — Data Activity Tracker confirms active ingestion.
+> Queryset connected to the DetectiveAgency Eventhouse; the data activity tracker shows active ingestion.
 
-### 06 — KQL Workbench Connected
+### 06 — Queryset connected
 ![06](images/06_KQL_Workbench_Connected_To_BusTelemetry.png)
-> Queryset `Digibus_NoShow_Investigation` connected to BusTelemetry table.
+> `Digibus_NoShow_Investigation` queryset connected to the BusTelemetry table.
 
-### 07 — Data Activator Alert Setup
+### 07 — Data Activator alert setup
 ![07](images/07_Data_Activator_Alert_Attempted.png)
-> Data Activator rule configured to monitor KQL query and send Teams message on condition breach.
+> First Data Activator rule being configured against the KQL query.
 
-### 08 — Data Activator Rule Configuration
+### 08 — Rule configuration
 ![08](images/08_Data_Activator_Rule_Configuration.png)
-> Rule `NoShow_Inv_Alert` — detection query embedded, runs every 5 minutes, Teams notification on trigger.
+> `NoShow_Inv_Alert` — detection query embedded, evaluated every 5 minutes, Teams message on trigger. Note there is no threshold in the embedded query yet.
 
-### 09 — KQL Fixed Query with Threshold
+### 09 — First threshold added
 ![09](images/09_KQL_Fixed_Query_Threshold_Added.png)
-> `| where MaxDelay > 1h` added — first threshold iteration.
+> `| where MaxDelay > 1h` — the first threshold iteration, which turned out to be too strict.
 
-### 10 — Improved Alert Rule
+### 10 — Second rule with threshold
 ![10](images/10_Data_Activator_Fixed_Rule_NoshowRealAlert.png)
-> New rule `NoshowRealAlert` built with threshold condition applied.
+> `NoshowRealAlert` built with the threshold condition applied.
 
-### 11 — Alert Fatigue in Action ⚠️
+### 11 — Alert fatigue, live
 ![11](images/11_Data_Activator_OldAlert_Firing_AlertFatigue.png)
-> `NoShow_Inv_Alert` fired **15 Teams messages in under 10 minutes** with no threshold — live proof of alert fatigue.
+> The unthresholded rule's action log: 15 Teams messages, timestamps minutes apart.
 
-### 12 — Fixed Alert — Clean
+### 12 — Fixed alert running clean
 ![12](images/12_Data_Activator_NewAlert_ThresholdFixed.png)
-> `NoshowRealAlert` with threshold applied — no spam, monitoring cleanly overnight.
+> `NoshowRealAlert` with the threshold — no spam while monitoring overnight.
 
-### 13 — Final Query Results
+### 13 — Final query results
 ![13](images/13_KQL_Live_Query_Results_Threshold_30m.png)
-> Threshold tuned to `>30m` — Bus Lines 74 and 11 surface as anomalies with delays of 58 and 39 minutes.
+> `>30m` threshold — four lines over threshold, led by 74 (58:30) and 11 (39:40).
 
-### 14 — Case Solved ✅
+### 14 — Case solved
 ![14](images/14_Case1_Solved_Congratulations.png)
-> Kusto Detective Agency confirmed correct. Pipeline live and continuously monitoring.
+> Answer `[74, 11]` accepted by the Kusto Detective Agency.
 
 ---
 
-## 🎯 SOC Skills Demonstrated
+## Skills This Exercised
 
-| Skill | How Applied |
-|-------|------------|
-| **Resource-Conscious KQL** | Time-scoped queries at line 1 + `arg_max()` aggregation — keeps execution times low in high-volume clusters |
-| **Telemetry Ingestion Architecture** | Eventstream + Eventhouse pipeline — direct architectural analogue to Sentinel Log Analytics collection points |
-| **Signal-to-Noise Tuning** | Systematically eliminated false-positive cascade (15 spam alerts → clean telemetry) via iterative distribution analysis |
-| **Schema Debugging** | Caught `ScheduledTime` vs `ScheduleTime` field mismatch — directly applicable to Sentinel field mapping issues |
-| **Alert Rule Engineering** | Built 2 Data Activator rules with Teams integration, iterated to production-ready threshold |
-| **Detection Iteration** | 3 query versions — schema fix → threshold introduction → performance optimisation |
-
----
-
-## 🔮 What's Next
-
-- [ ] Complete **Kusto Detective Agency Case 2** — advanced KQL patterns
-- [ ] Recreate this detection pipeline in **Microsoft Sentinel** — swap Eventstream for Log Analytics, Data Activator for Analytics Rules
-- [ ] Add a **Power BI real-time dashboard** on the BusTelemetry Eventhouse
-- [ ] Write detection rules for additional anomaly patterns — speed violations, route deviation, bunching
-- [ ] **🤖 Pilot AI-Driven Alerting** — use **IBM watsonx Orchestrate** to autonomously classify anomaly severity and route alerts to the correct response team before human review
+| Skill | Where it shows |
+|-------|----------------|
+| **Schema-first debugging** | `ScheduledTime` vs `ScheduleTime` — attempt 1 vs attempt 2 |
+| **Threshold tuning** | none → `>1h` → `>30m`, each validated against live data |
+| **Alert fatigue handling** | 15-message flood diagnosed and fixed with a threshold, not by muting the rule |
+| **Streaming ingestion** | Eventstream → Eventhouse pipeline — the Fabric analogue of a Sentinel Log Analytics collection path |
+| **Alert rule engineering** | Two Data Activator rules with Teams integration, 5-minute evaluation cycle |
 
 ---
 
-## 📁 Repository Structure
+## What's Next
+
+- [ ] Kusto Detective Agency Case 2 — more advanced KQL patterns
+- [ ] Recreate this detection in **Microsoft Sentinel** — Log Analytics in place of Eventstream, a scheduled analytics rule in place of Data Activator
+- [ ] A Power BI real-time dashboard on the BusTelemetry Eventhouse
+- [ ] Additional anomaly patterns — speed violations, route deviation, bus bunching
+
+---
+
+## Repository Structure
 
 ```
 fabric-fleet-telemetry-pipeline/
+├── README.md
+├── LICENSE
+├── .gitignore
 ├── queries/
-│   ├── attempt1_wrong_column.kql
-│   ├── attempt2_no_threshold.kql
-│   └── final_anomaly_detection.kql
-├── images/
-│   ├── 01_Project_Requirement_Brief.png
-│   ├── 02_Microsoft_Fabric_Environment_Setup.png
-│   ├── 03_Fabric_Workspace_Dashboard.png
-│   ├── 04_Eventhouse_Provisioning_In_Progress.png
-│   ├── 05_KQL_Queryset_Creation_BusTelemetry_Live.png
-│   ├── 06_KQL_Workbench_Connected_To_BusTelemetry.png
-│   ├── 07_Data_Activator_Alert_Attempted.png
-│   ├── 08_Data_Activator_Rule_Configuration.png
-│   ├── 09_KQL_Fixed_Query_Threshold_Added.png
-│   ├── 10_Data_Activator_Fixed_Rule_NoshowRealAlert.png
-│   ├── 11_Data_Activator_OldAlert_Firing_AlertFatigue.png
-│   ├── 12_Data_Activator_NewAlert_ThresholdFixed.png
-│   ├── 13_KQL_Live_Query_Results_Threshold_30m.png
-│   └── 14_Case1_Solved_Congratulations.png
-└── README.md
+│   ├── attempt1_wrong_column.kql            # fails by design — schema lesson
+│   ├── attempt2_no_threshold.kql            # the alert-fatigue query (as embedded in the rule)
+│   ├── final_anomaly_detection.kql          # as run — matches screenshot 13
+│   └── final_anomaly_detection_improved.kql # post-lab revision, not the lab-run version
+└── images/                                   # 14 screenshots — setup, rules, fatigue, results
 ```
 
 ---
 
-## 🔗 Related Projects
+## Related Projects
 
 | Project | Description |
 |---------|-------------|
-| [Dual SIEM Detection Lab](https://github.com/shank078/Dual-SIEM-Detection-Lab) | Same KQL patterns applied to live security telemetry in Microsoft Sentinel |
+| [Dual SIEM Detection Lab](https://github.com/shank078/Dual-SIEM-Detection-Lab) | The same KQL discipline applied to live security telemetry in Sentinel and Splunk |
 | [Azure Sentinel Honeypot SIEM](https://github.com/shank078/azure-sentinel-honeypot-siem) | 1,400+ real brute-force attempts captured and mapped globally |
-| [SOAR Pipeline — Sentinel to Jira](https://github.com/shank078/azure-sentinel-jira-soar-pipeline) | Zero-touch automated incident ticketing |
+| [SOAR Pipeline — Sentinel to Jira](https://github.com/shank078/azure-sentinel-jira-soar-pipeline) | Automated incident ticketing from Sentinel |
 
 ---
 
-## 👤 About the Author
+## About
 
-**Shankar Baral** — Junior Cyber Security Analyst & IT Support Specialist
-Master of Information Technology (Cyber Security) · GPA 4.92 · Australian Permanent Resident · Canberra, ACT
-
-[![LinkedIn](https://img.shields.io/badge/LinkedIn-shankarbaral1-0A66C2?style=for-the-badge&logo=linkedin&logoColor=white)](https://linkedin.com/in/shankarbaral1)
-[![GitHub](https://img.shields.io/badge/GitHub-shank078-181717?style=for-the-badge&logo=github&logoColor=white)](https://github.com/shank078)
-[![Email](https://img.shields.io/badge/Email-shankarbaral1@gmail.com-EA4335?style=for-the-badge&logo=gmail&logoColor=white)](mailto:shankarbaral1@gmail.com)
-
-*Open to Junior SOC Analyst and Security Engineer opportunities in Australia.*
-
----
-
-> *The same KQL query that finds a missing bus finds a missing threat. The platform changes. The pattern doesn't.*
+Built and documented by **Shankar Baral** — junior SOC analyst in Canberra, Australia. More about me and my other labs: [github.com/shank078](https://github.com/shank078) · [LinkedIn](https://www.linkedin.com/in/shankarbaral1)
